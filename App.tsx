@@ -1,45 +1,3 @@
-import { supabase } from "./supabase"
-import { useState } from "react"
-
-export default function App() {
-  const [videos, setVideos] = useState<string[]>([])
-
-  const uploadVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return
-    const file = e.target.files[0]
-
-    const fileName = Date.now() + "-" + file.name
-
-    const { error } = await supabase.storage
-      .from("videos")
-      .upload(fileName, file)
-
-    if (error) {
-      alert("上传失败")
-      return
-    }
-
-    const { data } = supabase.storage
-      .from("videos")
-      .getPublicUrl(fileName)
-
-    setVideos(prev => [...prev, data.publicUrl])
-  }
-
-  return (
-    <div style={{ padding: 40 }}>
-      <h1>AI 视频素材库</h1>
-
-      <input type="file" accept="video/*" onChange={uploadVideo} />
-
-      <div style={{ marginTop: 30 }}>
-        {videos.map((url, i) => (
-          <video key={i} src={url} controls width="300" />
-        ))}
-      </div>
-    </div>
-  )
-}
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
@@ -53,7 +11,7 @@ import { FilterFolder, TopFilterState, Video, Project } from './types';
 import { getVideoFile, deleteVideoFile, getStorageUsage } from './utils/db';
 
 function App() {
-  // Data State with Persistence
+  // ---------------- Data State ----------------
   const [videos, setVideos] = useState<Video[]>(() => {
     try {
       const saved = localStorage.getItem('smartclip_videos');
@@ -68,7 +26,7 @@ function App() {
     try {
       const saved = localStorage.getItem('smartclip_projects');
       return saved ? JSON.parse(saved) : [
-        { id: 101, name: '2023春季营销', createdAt: '2023-01-01' }, // Default mock project
+        { id: 101, name: '2023春季营销', createdAt: '2023-01-01' },
       ];
     } catch (e) {
       return [];
@@ -77,7 +35,7 @@ function App() {
 
   const [storageUsage, setStorageUsage] = useState({ used: 0, quota: 0 });
 
-  // Update storage usage helper
+  // ---------------- Storage Info ----------------
   const updateStorageInfo = async () => {
     try {
       const usage = await getStorageUsage();
@@ -87,41 +45,30 @@ function App() {
     }
   };
 
-  // Restore Video Blobs from IndexedDB on Mount
+  // ---------------- Restore Video Blobs ----------------
   useEffect(() => {
     const hydrateVideos = async () => {
       const hydrated = await Promise.all(videos.map(async (v) => {
-        // If it's a mock video (small ID) or already has a valid remote URL (not blob), skip DB check
-        // We assume IDs > 100000 are likely timestamp-based uploaded videos
         if (v.id < 1000000 && !v.url?.startsWith('blob:')) return v;
-
-        // Try to get the blob from DB
         const blob = await getVideoFile(v.id);
         if (blob) {
           const newUrl = URL.createObjectURL(blob);
-          // Only update if URL is different (avoid unnecessary updates if possible, though blob URLs change on refresh anyway)
-          if (v.url !== newUrl) {
-            return { ...v, url: newUrl };
-          }
+          if (v.url !== newUrl) return { ...v, url: newUrl };
         }
         return v;
       }));
-      
-      // Simple equality check to prevent loops (though dependency [] prevents loop)
+
       const hasChanges = hydrated.some((v, i) => v.url !== videos[i].url);
-      if (hasChanges) {
-        setVideos(hydrated);
-      }
-      
-      // Update storage info after hydration
+      if (hasChanges) setVideos(hydrated);
+
       updateStorageInfo();
     };
-    
+
     hydrateVideos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save to LocalStorage
+  // ---------------- Persist to LocalStorage ----------------
   useEffect(() => {
     localStorage.setItem('smartclip_videos', JSON.stringify(videos));
   }, [videos]);
@@ -129,24 +76,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem('smartclip_projects', JSON.stringify(projects));
   }, [projects]);
-  
-  // Selection State
+
+  // ---------------- Selection State ----------------
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
-  // Filter State
+  // ---------------- Filter State ----------------
   const [currentFolder, setCurrentFolder] = useState<FilterFolder>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [topFilter, setTopFilter] = useState<TopFilterState>({ orientation: 'all', content: 'all' });
 
-  // Modal State
+  // ---------------- Modal State ----------------
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedVideoDetail, setSelectedVideoDetail] = useState<Video | null>(null);
 
-  // Toast State
+  // ---------------- Toast ----------------
   const [toast, setToast] = useState<ToastState>({ message: '', type: 'success', visible: false });
-
-  // Helper: Show Toast
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, visible: true });
     setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
@@ -156,11 +101,7 @@ function App() {
   const handleCreateProject = () => {
     const name = window.prompt("请输入新文件夹名称：");
     if (name && name.trim()) {
-      const newProject: Project = {
-        id: Date.now(),
-        name: name.trim(),
-        createdAt: new Date().toISOString()
-      };
+      const newProject: Project = { id: Date.now(), name: name.trim(), createdAt: new Date().toISOString() };
       setProjects(prev => [...prev, newProject]);
       showToast(`已创建文件夹 "${name}"`, 'success');
     }
@@ -170,11 +111,7 @@ function App() {
     e.stopPropagation();
     if (window.confirm("确定要删除此文件夹吗？文件夹内的视频将保留在“全部素材”中。")) {
       setProjects(prev => prev.filter(p => p.id !== projectId));
-      // If currently viewing this project, switch back to all
-      if (currentFolder === `project-${projectId}`) {
-        setCurrentFolder('all');
-      }
-      // Remove project association from videos
+      if (currentFolder === `project-${projectId}`) setCurrentFolder('all');
       setVideos(prev => prev.map(v => v.projectId === projectId ? { ...v, projectId: undefined } : v));
       showToast('文件夹已删除', 'success');
     }
@@ -183,13 +120,10 @@ function App() {
   // ---------------- Filtering Logic ----------------
   const filteredVideos = useMemo(() => {
     return videos.filter(video => {
-      // 1. Sidebar Folder Filter
       const isDeleted = !!video.isDeleted;
-      
-      if (isDeleted && currentFolder !== 'trash') return false; // Hide deleted items unless in trash
+      if (isDeleted && currentFolder !== 'trash') return false;
       if (!isDeleted && currentFolder === 'trash') return false;
 
-      // Handle Project Filtering (format: 'project-123')
       if (currentFolder.startsWith('project-')) {
         const projectId = parseInt(currentFolder.split('-')[1]);
         if (video.projectId !== projectId) return false;
@@ -205,12 +139,8 @@ function App() {
         }
       }
 
-      // 2. Search Filter
-      if (searchTerm) {
-        if (!video.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      }
+      if (searchTerm && !video.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
 
-      // 3. Top Bar Filters
       if (topFilter.orientation !== 'all' && video.orientation !== topFilter.orientation) return false;
       if (topFilter.content !== 'all') {
         const isHuman = topFilter.content === 'human';
@@ -224,7 +154,6 @@ function App() {
   // ---------------- Selection Logic ----------------
   const toggleSelectionMode = () => {
     if (isSelectionMode) {
-      // Exiting mode
       setSelectedIds(new Set());
       setIsSelectionMode(false);
     } else {
@@ -233,9 +162,7 @@ function App() {
   };
 
   const handleToggleSelect = (id: number) => {
-    if (!isSelectionMode) {
-      setIsSelectionMode(true);
-    }
+    if (!isSelectionMode) setIsSelectionMode(true);
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -244,22 +171,14 @@ function App() {
     });
   };
 
-  const selectAll = () => {
-    const allIds = filteredVideos.map(v => v.id);
-    setSelectedIds(new Set(allIds));
-  };
-
-  const deselectAll = () => {
-    setSelectedIds(new Set());
-  };
+  const selectAll = () => setSelectedIds(new Set(filteredVideos.map(v => v.id)));
+  const deselectAll = () => setSelectedIds(new Set());
 
   // ---------------- Batch Actions ----------------
   const handleBatchDownload = () => {
     if (selectedIds.size === 0) return showToast('请先选择视频', 'error');
-    
     const selectedVideos = videos.filter(v => selectedIds.has(v.id));
-    let realDownloadCount = 0;
-
+    let count = 0;
     selectedVideos.forEach(video => {
       if (video.url && video.url.startsWith('blob:')) {
         const a = document.createElement('a');
@@ -268,16 +187,11 @@ function App() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        realDownloadCount++;
+        count++;
       }
     });
-
-    if (realDownloadCount > 0) {
-      showToast(`已触发 ${realDownloadCount} 个文件的下载任务`, 'success');
-    } else {
-      showToast(`模拟下载：${selectedIds.size} 个视频已加入下载队列`, 'success');
-    }
-
+    if (count > 0) showToast(`已触发 ${count} 个文件的下载任务`, 'success');
+    else showToast(`模拟下载：${selectedIds.size} 个视频已加入下载队列`, 'success');
     setIsSelectionMode(false);
     setSelectedIds(new Set());
   };
@@ -285,14 +199,7 @@ function App() {
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return showToast('请先选择视频', 'error');
     if (!window.confirm(`确定要将选中的 ${selectedIds.size} 个视频移至回收站吗？`)) return;
-
-    setVideos(prev => prev.map(v => {
-      if (selectedIds.has(v.id)) {
-        return { ...v, isDeleted: true };
-      }
-      return v;
-    }));
-    
+    setVideos(prev => prev.map(v => selectedIds.has(v.id) ? { ...v, isDeleted: true } : v));
     showToast(`已将 ${selectedIds.size} 个视频移至回收站`, 'success');
     setIsSelectionMode(false);
     setSelectedIds(new Set());
@@ -317,15 +224,8 @@ function App() {
     setVideos(prev => prev.map(v => {
       if (v.id === id) {
         const newStatus = !v.isFavorite;
-        // Update both the list and the currently selected detail view if needed
-        if (selectedVideoDetail && selectedVideoDetail.id === id) {
-          setSelectedVideoDetail(current => current ? ({ ...current, isFavorite: newStatus }) : null);
-        }
-        if (newStatus) {
-            showToast('已添加到收藏夹', 'success');
-        } else {
-            showToast('已取消收藏', 'success');
-        }
+        if (selectedVideoDetail?.id === id) setSelectedVideoDetail(prev => prev ? ({ ...prev, isFavorite: newStatus }) : null);
+        showToast(newStatus ? '已添加到收藏夹' : '已取消收藏', 'success');
         return { ...v, isFavorite: newStatus };
       }
       return v;
@@ -333,67 +233,47 @@ function App() {
   };
 
   const handleDeleteVideo = (id: number) => {
-    const targetVideo = videos.find(v => v.id === id);
-    if (!targetVideo) return;
-
-    if (targetVideo.isDeleted) {
-      // Permanent Delete
+    const target = videos.find(v => v.id === id);
+    if (!target) return;
+    if (target.isDeleted) {
       if (!window.confirm("确定要彻底删除此视频吗？此操作无法撤销。")) return;
-      
-      // Clean up from IndexedDB
-      deleteVideoFile(id)
-        .then(() => updateStorageInfo()) // Update storage
-        .catch(err => console.error("DB Cleanup failed", err));
-
+      deleteVideoFile(id).then(updateStorageInfo).catch(console.error);
       setVideos(prev => prev.filter(v => v.id !== id));
       setSelectedVideoDetail(null);
       showToast('视频已彻底删除', 'success');
     } else {
-      // Move to Trash
       if (!window.confirm("确定要删除此视频吗？它将被移至回收站。")) return;
-      setVideos(prev => prev.map(v => {
-        if (v.id === id) return { ...v, isDeleted: true };
-        return v;
-      }));
+      setVideos(prev => prev.map(v => v.id === id ? { ...v, isDeleted: true } : v));
       setSelectedVideoDetail(null);
       showToast('视频已移至回收站', 'success');
     }
   };
 
   const handleRestoreVideo = (id: number) => {
-    setVideos(prev => prev.map(v => {
-      if (v.id === id) return { ...v, isDeleted: false };
-      return v;
-    }));
-    
-    if (selectedVideoDetail && selectedVideoDetail.id === id) {
-      setSelectedVideoDetail(prev => prev ? ({ ...prev, isDeleted: false }) : null);
-    }
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, isDeleted: false } : v));
+    if (selectedVideoDetail?.id === id) setSelectedVideoDetail(prev => prev ? ({ ...prev, isDeleted: false }) : null);
     showToast('视频已恢复', 'success');
   };
 
   const handleShareVideo = (video: Video) => {
-    navigator.clipboard.writeText(`https://smartclip.hub/v/${video.id}`).then(() => {
-        showToast('链接已复制到剪贴板', 'success');
-    }).catch(() => {
-        showToast('分享链接生成失败', 'error');
-    });
+    navigator.clipboard.writeText(`https://smartclip.hub/v/${video.id}`)
+      .then(() => showToast('链接已复制到剪贴板', 'success'))
+      .catch(() => showToast('分享链接生成失败', 'error'));
   };
 
   const handleUploadComplete = (newVideos: Video[]) => {
     setVideos(prev => [...newVideos, ...prev]);
     showToast(`成功上传并归类 ${newVideos.length} 个视频`, 'success');
-    updateStorageInfo(); // Update storage
+    updateStorageInfo();
   };
 
-  // ---------------- Helper for Title ----------------
+  // ---------------- Folder Title ----------------
   const getFolderTitle = () => {
     if (currentFolder.startsWith('project-')) {
       const pid = parseInt(currentFolder.split('-')[1]);
       const project = projects.find(p => p.id === pid);
       return project ? `项目：${project.name}` : '未知项目';
     }
-
     switch (currentFolder) {
       case 'all': return '全部素材';
       case 'fav': return '收藏夹';
@@ -406,11 +286,12 @@ function App() {
     }
   };
 
+  // ---------------- Render ----------------
   return (
     <div className="flex h-full">
-      <Sidebar 
-        currentFolder={currentFolder} 
-        onFilterChange={setCurrentFolder} 
+      <Sidebar
+        currentFolder={currentFolder}
+        onFilterChange={setCurrentFolder}
         onUploadClick={() => setIsUploadModalOpen(true)}
         projects={projects}
         onCreateProject={handleCreateProject}
@@ -419,7 +300,7 @@ function App() {
       />
 
       <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50">
-        <TopBar 
+        <TopBar
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           isSelectionMode={isSelectionMode}
@@ -429,36 +310,31 @@ function App() {
         />
 
         <div className="flex-1 overflow-y-auto p-6 pb-24">
-          {/* Header */}
           <div className="flex justify-between items-end mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">{getFolderTitle()}</h1>
               <p className="text-sm text-gray-500 mt-1">共 {filteredVideos.length} 个项目</p>
             </div>
-            <div className="text-sm text-gray-500">
-              按 <span className="font-medium text-gray-700 cursor-pointer">上传时间 <i className="fa-solid fa-chevron-down text-xs"></i></span> 排序
-            </div>
           </div>
 
-          {/* Grid */}
           {filteredVideos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-400">
               <i className="fa-regular fa-folder-open text-5xl mb-4"></i>
               <p>该文件夹下暂无内容</p>
               {currentFolder.startsWith('project-') && (
-                <button 
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="mt-4 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                <button
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="mt-4 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                 >
-                    去上传视频到此项目
+                  去上传视频到此项目
                 </button>
               )}
             </div>
           ) : (
             <div className="columns-2 lg:columns-3 xl:columns-4 gap-6 pb-10">
               {filteredVideos.map(video => (
-                <VideoCard 
-                  key={video.id} 
+                <VideoCard
+                  key={video.id}
                   video={video}
                   isSelected={selectedIds.has(video.id)}
                   isSelectionMode={isSelectionMode}
@@ -470,7 +346,7 @@ function App() {
           )}
         </div>
 
-        <BatchActionBar 
+        <BatchActionBar
           isVisible={isSelectionMode}
           selectedCount={selectedIds.size}
           onSelectAll={selectAll}
@@ -481,16 +357,16 @@ function App() {
         />
       </main>
 
-      <UploadModal 
-        isOpen={isUploadModalOpen} 
+      <UploadModal
+        isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onComplete={handleUploadComplete}
         projects={projects}
         initialProjectId={currentFolder.startsWith('project-') ? parseInt(currentFolder.split('-')[1]) : undefined}
       />
 
-      <DetailModal 
-        video={selectedVideoDetail} 
+      <DetailModal
+        video={selectedVideoDetail}
         onClose={() => setSelectedVideoDetail(null)}
         onDownload={handleDownloadVideo}
         onFavorite={handleToggleFavorite}
