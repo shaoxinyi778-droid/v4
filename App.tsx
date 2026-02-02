@@ -1,3 +1,45 @@
+import { supabase } from "./supabase"
+import { useState } from "react"
+
+export default function App() {
+  const [videos, setVideos] = useState<string[]>([])
+
+  const uploadVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return
+    const file = e.target.files[0]
+
+    const fileName = Date.now() + "-" + file.name
+
+    const { error } = await supabase.storage
+      .from("videos")
+      .upload(fileName, file)
+
+    if (error) {
+      alert("上传失败")
+      return
+    }
+
+    const { data } = supabase.storage
+      .from("videos")
+      .getPublicUrl(fileName)
+
+    setVideos(prev => [...prev, data.publicUrl])
+  }
+
+  return (
+    <div style={{ padding: 40 }}>
+      <h1>AI 视频素材库</h1>
+
+      <input type="file" accept="video/*" onChange={uploadVideo} />
+
+      <div style={{ marginTop: 30 }}>
+        {videos.map((url, i) => (
+          <video key={i} src={url} controls width="300" />
+        ))}
+      </div>
+    </div>
+  )
+}
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
